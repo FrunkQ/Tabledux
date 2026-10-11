@@ -5,10 +5,12 @@ import {
   DevicesFileSchema,
   ScenesFileSchema,
   SecretsFileSchema,
+  TableLayoutSchema,
   type Binding,
   type Device,
   type Scene,
   type Secrets,
+  type TableLayout,
 } from '@tabledux/core';
 import type { z } from 'zod';
 
@@ -23,6 +25,7 @@ export class ConfigStore {
   scenes: Scene[] = [];
   bindings: Binding[] = [];
   secrets: Secrets = { devices: {} };
+  layout: TableLayout = TableLayoutSchema.parse({});
 
   constructor(readonly dir: string) {}
 
@@ -31,6 +34,7 @@ export class ConfigStore {
     this.devices = (await this.read('devices.json', DevicesFileSchema, { devices: [] })).devices;
     this.scenes = (await this.read('scenes.json', ScenesFileSchema, { scenes: [] })).scenes;
     this.bindings = (await this.read('bindings.json', BindingsFileSchema, { bindings: [] })).bindings;
+    this.layout = await this.read('table.json', TableLayoutSchema, {});
     this.secrets = await this.read('secrets.json', SecretsFileSchema, { devices: {} }, 0o600);
   }
 
@@ -64,6 +68,11 @@ export class ConfigStore {
   saveBindings(bindings: Binding[]): Promise<void> {
     this.bindings = BindingsFileSchema.parse({ bindings }).bindings;
     return this.write('bindings.json', { bindings: this.bindings });
+  }
+
+  saveLayout(layout: unknown): Promise<void> {
+    this.layout = TableLayoutSchema.parse(layout);
+    return this.write('table.json', this.layout);
   }
 
   private async read<S extends z.ZodType>(

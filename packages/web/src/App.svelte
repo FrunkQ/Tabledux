@@ -2,12 +2,14 @@
   import { live } from './live.svelte';
   import Status from './views/Status.svelte';
   import Scenes from './views/Scenes.svelte';
+  import Table from './views/Table.svelte';
   import Bindings from './views/Bindings.svelte';
   import Devices from './views/Devices.svelte';
 
   const tabs = [
     { id: 'status', label: 'Status', view: Status },
     { id: 'scenes', label: 'Scenes', view: Scenes },
+    { id: 'table', label: 'Table', view: Table },
     { id: 'bindings', label: 'Bindings', view: Bindings },
     { id: 'devices', label: 'Devices', view: Devices },
   ] as const;

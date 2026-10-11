@@ -39,6 +39,11 @@ export const WledDeviceSchema = z.object({
   name: z.string().default(''),
   kind: z.literal('wled'),
   url: z.string().min(1),
+  /**
+   * Segment ids from here up are reserved for overlays (seats, turn
+   * highlights); scenes use the ids below. WLED on ESP32 allows 32 segments.
+   */
+  overlayBase: z.number().int().min(1).max(31).default(10),
 });
 export type WledDevice = z.infer<typeof WledDeviceSchema>;
 

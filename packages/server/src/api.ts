@@ -6,6 +6,7 @@ import {
   LightTargetSchema,
   SceneSchema,
   TableEventSchema,
+  TableLayoutSchema,
   slugId,
 } from '@tabledux/core';
 import { z } from 'zod';
@@ -87,6 +88,21 @@ export function registerApi(app: FastifyInstance, table: Table): void {
   });
   app.post('/api/lights/off', async () => {
     await table.allOff();
+    return { ok: true };
+  });
+
+  // Table layout: LED runs, seats, overlay style
+  app.get('/api/layout', async () => config.layout);
+  app.put('/api/layout', async (req) => {
+    await table.saveLayout(parse(TableLayoutSchema, req.body));
+    return config.layout;
+  });
+  app.post('/api/overlays', async (req) => {
+    const body = parse(
+      z.object({ seatsShown: z.boolean().optional(), highlightSeat: z.string().min(1).nullable().optional() }),
+      req.body,
+    );
+    await table.setOverlayState(body);
     return { ok: true };
   });
 

@@ -22,6 +22,7 @@ export interface Device {
   name: string;
   kind: 'wled' | 'homeassistant';
   url: string;
+  overlayBase?: number;
 }
 export interface Scene {
   id: string;
@@ -71,4 +72,36 @@ export interface TableSnapshot {
   devices: DeviceStatus[];
   log: { event: TableEvent; results: ActionResult[] }[];
   actionTypes: string[];
+  layout: TableLayout;
+  seatsShown: boolean;
+  highlightSeat: string | null;
+}
+export interface LedRun {
+  device: string;
+  start: number;
+  count: number;
+  lengthMm: number;
+  reversed: boolean;
+  label: string;
+}
+export interface Seat {
+  id: string;
+  name: string;
+  fromMm: number;
+  toMm: number;
+  colour: string;
+  player: string;
+}
+export interface OverlayStyle {
+  seatBrightness: number;
+  highlightBrightness: number;
+  highlightFx: number;
+  highlightSpeed: number;
+  highlightIntensity: number;
+}
+export interface TableLayout {
+  runs: LedRun[];
+  seats: Seat[];
+  turnDirection: 'forward' | 'backward';
+  style: OverlayStyle;
 }

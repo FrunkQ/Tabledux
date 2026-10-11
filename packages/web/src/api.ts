@@ -1,4 +1,4 @@
-import type { Action, Binding, Device, DeviceCatalog, LightTarget, Scene, TableSnapshot } from './types';
+import type { Action, Binding, Device, DeviceCatalog, LightTarget, Scene, TableLayout, TableSnapshot } from './types';
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
@@ -27,6 +27,9 @@ export const api = {
   lightsOff: () => call('POST', '/api/lights/off'),
   bindings: () => call<Binding[]>('GET', '/api/bindings'),
   saveBindings: (b: Binding[]) => call<Binding[]>('PUT', '/api/bindings', b),
+  layout: () => call<TableLayout>('GET', '/api/layout'),
+  saveLayout: (l: TableLayout) => call<TableLayout>('PUT', '/api/layout', l),
+  overlays: (o: { seatsShown?: boolean; highlightSeat?: string | null }) => call('POST', '/api/overlays', o),
   runAction: (a: Action) => call('POST', '/api/actions', a),
 };
 

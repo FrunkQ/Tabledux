@@ -43,7 +43,7 @@ The **bindings engine** is the heart of "configurable not unique": the GM puck, 
 
 Two layers, composed per LED run:
 1. **Background** = the active scene. Uses WLED's own effects/presets (cheap, rich, runs on the controller).
-2. **Overlays** = seats, turn, timers, alerts. Implemented as **WLED segments** laid over the background segment, set via the JSON API (`/json/state`). That's what GameTableWLED did, minus the hand-numbered segment juggling: the engine allocates segments from the geometry and seats automatically.
+2. **Overlays** = seats, turn, timers, alerts. Implemented as **WLED segments** laid over the background segment, set via the JSON API (`/json/state`). That's what GameTableWLED did, minus the hand-numbered segment juggling: the engine allocates segments from the geometry and seats automatically. Segment ids from each WLED device's `overlayBase` (default 10) upward belong to overlays; scenes use the ids below it. WLED draws later segments on top, so overlays sit over the scene, and after a preset recall they are redrawn once the preset has loaded.
 
 Plus a **stream mode** for things WLED effects can't do: Tabledux renders pixels itself and streams them over WLED's realtime **DDP** protocol (UDP 4048). It's used for position detection (exact Gray-code frames) and later for fancy custom effects. WLED drops back to its own state when the stream stops.
 

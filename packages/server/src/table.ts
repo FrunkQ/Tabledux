@@ -1,13 +1,17 @@
 import {
   BindingsEngine,
   EventBus,
+  nextSeat,
+  overlaysFor,
   slugId,
   type ActionResult,
   type LightCatalog,
   type LightDriver,
   type LightTarget,
+  type OverlaySegment,
   type Scene,
   type TableEvent,
+  type TableLayout,
 } from '@tabledux/core';
 import { WledDriver } from '@tabledux/wled';
 import { HaClient, defaultService, type HaEntity } from '@tabledux/homeassistant';
@@ -41,6 +45,9 @@ export interface TableSnapshot {
   devices: DeviceStatus[];
   log: LogEntry[];
   actionTypes: string[];
+  layout: TableLayout;
+  seatsShown: boolean;
+  highlightSeat: string | null;
 }
 
 const LOG_SIZE = 50;
@@ -55,6 +62,9 @@ export class Table {
   private log: LogEntry[] = [];
   mode = 'idle';
   activeSceneId: string | null = null;
+  /** Overlay layer: seat colour bars and the highlighted (active turn) seat. */
+  seatsShown = false;
+  highlightSeat: string | null = null;
   private listeners = new Set<() => void>();
 
   constructor(
@@ -85,6 +95,9 @@ export class Table {
       devices: this.config.devices.map((d) => this.status.get(d.id) ?? { ...d, online: false }),
       log: this.log,
       actionTypes: this.engine.actionTypes(),
+      layout: this.config.layout,
+      seatsShown: this.seatsShown,
+      highlightSeat: this.highlightSeat,
     };
   }
 
@@ -94,7 +107,7 @@ export class Table {
     this.drivers.clear();
     this.ha.clear();
     for (const d of this.config.devices) {
-      if (d.kind === 'wled') this.drivers.set(d.id, new WledDriver(d.id, d.url));
+      if (d.kind === 'wled') this.drivers.set(d.id, new WledDriver(d.id, d.url, undefined, d.overlayBase));
       if (d.kind === 'homeassistant') this.ha.set(d.id, new HaClient(d.url, this.config.tokenFor(d.id)));
     }
     const ids = new Set(this.config.devices.map((d) => d.id));
@@ -137,7 +150,7 @@ export class Table {
   async preview(deviceId: string, target: LightTarget): Promise<void> {
     const driver = this.drivers.get(deviceId);
     if (!driver) throw new Error(`No light device "${deviceId}"`);
-    await driver.apply(target);
+    await driver.apply(target, this.overlays().get(deviceId) ?? []);
   }
 
   async captureDevice(deviceId: string): Promise<LightTarget> {
@@ -181,12 +194,13 @@ export class Table {
     const scene = this.config.scenes.find((s) => s.id === id);
     if (!scene) throw new Error(`No scene "${id}"`);
     const errors: string[] = [];
+    const overlays = this.overlays();
     await Promise.all(
       Object.entries(scene.lights).map(async ([deviceId, target]) => {
         const driver = this.drivers.get(deviceId);
         if (!driver) return void errors.push(`device "${deviceId}" is not configured`);
         try {
-          await driver.apply(target);
+          await driver.apply(target, overlays.get(deviceId) ?? []);
         } catch (err) {
           errors.push(`${deviceId}: ${(err as Error).message}`);
         }
@@ -208,6 +222,47 @@ export class Table {
     this.changed();
   }
 
+  // ── Layout & overlays ──────────────────────────────────────
+
+  async saveLayout(layout: unknown): Promise<void> {
+    await this.config.saveLayout(layout);
+    if (this.highlightSeat && !this.config.layout.seats.some((s) => s.id === this.highlightSeat)) {
+      this.highlightSeat = null;
+    }
+    // The layout is saved either way; an offline controller just misses this redraw.
+    await this.redrawOverlays().catch((err: Error) => this.logger.warn(err.message));
+  }
+
+  async setOverlayState(change: { seatsShown?: boolean; highlightSeat?: string | null }): Promise<void> {
+    if (change.highlightSeat && !this.config.layout.seats.some((s) => s.id === change.highlightSeat)) {
+      throw new Error(`No seat "${change.highlightSeat}"`);
+    }
+    if (change.seatsShown !== undefined) this.seatsShown = change.seatsShown;
+    if (change.highlightSeat !== undefined) this.highlightSeat = change.highlightSeat;
+    await this.redrawOverlays();
+  }
+
+  private overlays(): Map<string, OverlaySegment[]> {
+    return overlaysFor(this.config.layout, { seatsShown: this.seatsShown, highlightSeat: this.highlightSeat });
+  }
+
+  /** Pushes the overlay layer to every light device, leaving their scenes alone. */
+  private async redrawOverlays(): Promise<void> {
+    const overlays = this.overlays();
+    const errors: string[] = [];
+    await Promise.all(
+      [...this.drivers.entries()].map(async ([id, driver]) => {
+        try {
+          await driver.setOverlays(overlays.get(id) ?? []);
+        } catch (err) {
+          errors.push(`${id}: ${(err as Error).message}`);
+        }
+      }),
+    );
+    this.changed();
+    if (errors.length) throw new Error(`Overlays failed on ${errors.join('; ')}`);
+  }
+
   // ── Events & actions ───────────────────────────────────────
 
   private registerActions(): void {
@@ -222,8 +277,21 @@ export class Table {
       if (!driver) throw new Error(`No device "${String(p.device)}"`);
       const preset = Number(p.preset);
       if (!Number.isInteger(preset) || preset < 1) throw new Error('preset must be a whole number from 1 up');
-      await driver.apply({ preset });
+      await driver.apply({ preset }, this.overlays().get(String(p.device)) ?? []);
     });
+    this.engine.registerAction('seats.show', (p) => {
+      const show = p.show === 'toggle' ? !this.seatsShown : p.show !== false && p.show !== 'false';
+      return this.setOverlayState({ seatsShown: show });
+    });
+    this.engine.registerAction('seat.highlight', (p) => this.setOverlayState({ highlightSeat: requireString(p, 'seat') }));
+    this.engine.registerAction('seat.next', (p) => {
+      const step = p.step === undefined || p.step === '' ? 1 : Number(p.step);
+      if (!Number.isInteger(step)) throw new Error('step must be a whole number');
+      const seat = nextSeat(this.config.layout, this.highlightSeat, step);
+      if (!seat) throw new Error('No seats set up');
+      return this.setOverlayState({ highlightSeat: seat.id });
+    });
+    this.engine.registerAction('seat.clear', () => this.setOverlayState({ highlightSeat: null }));
     this.engine.registerAction('ha.call', async (p) => {
       const ha = this.ha.get(requireString(p, 'device'));
       if (!ha) throw new Error(`No Home Assistant device "${String(p.device)}"`);
